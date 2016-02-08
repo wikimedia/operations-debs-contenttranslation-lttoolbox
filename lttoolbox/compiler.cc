@@ -12,9 +12,7 @@
  * General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
- * 02111-1307, USA.
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 #include <lttoolbox/compiler.h>
 #include <lttoolbox/compression.h>
@@ -61,7 +59,11 @@ wstring const Compiler::COMPILER_V_ATTR             = L"v";
 wstring const Compiler::COMPILER_VL_ATTR            = L"vl";
 wstring const Compiler::COMPILER_VR_ATTR            = L"vr";
 
-Compiler::Compiler()
+Compiler::Compiler() :
+reader(0),
+verbose(false),
+first_element(false),
+acx_current_char(0)
 {
 }
 

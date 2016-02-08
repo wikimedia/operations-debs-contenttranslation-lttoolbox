@@ -24,7 +24,7 @@ lttoolboxdir = $(prefix)/share/lttoolbox
 lttoolboxinclude = $(prefix)/include
 lttoolboxlib = $(prefix)/lib
 
-lttoolbox_DATA = dix.dtd dix.rng acx.rng
+lttoolbox_DATA = dix.dtd dix.rng acx.rng xsd/dix.xsd xsd/acx.xsd
 
 lt_print_SOURCES = lt_print.cc
 lt_print_LDADD = liblttoolbox$(GENERIC_MAJOR_VERSION).la
@@ -67,6 +67,9 @@ lt_tmxproc_LDFLAGS = -llttoolbox$(GENERIC_MAJOR_VERSION) $(LTTOOLBOX_LIBS)
 man_MANS = lt-comp.1 lt-expand.1 lt-proc.1 lt-tmxcomp.1 lt-tmxproc.1 lt-print.1 lt-trim.1
 
 INCLUDES = -I$(top_srcdir) $(LTTOOLBOX_CFLAGS)
+if WINDOWS
+  INCLUDES += -I$(top_srcdir)/utf8
+endif
 CLEANFILES = *~
 
-EXTRA_DIST = dix.dtd dix.rng acx.rng CMakeLists.txt $(man_MANS)
+EXTRA_DIST = dix.dtd dix.rng acx.rng xsd/dix.xsd xsd/acx.xsd CMakeLists.txt $(man_MANS)
