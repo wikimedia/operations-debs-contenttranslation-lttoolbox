@@ -12,9 +12,7 @@
  * General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
- * 02111-1307, USA.
+ * along with this program; if not, see <http://www.gnu.org/licenses/>.
  */
 #include <lttoolbox/transducer.h>
 #include <lttoolbox/compression.h>
@@ -101,11 +99,11 @@ trim(FILE *file_mono, FILE *file_bi)
   for(std::map<wstring, Transducer>::iterator it = trans_bi.begin(); it != trans_bi.end(); it++)
   {
     Transducer union_tmp = it->second;
-    if(union_transducer.isEmpty()) 
+    if(union_transducer.isEmpty())
     {
       union_transducer = union_tmp;
     }
-    else 
+    else
     {
       union_transducer.unionWith(alph_bi, union_tmp);
     }
@@ -155,7 +153,17 @@ int main(int argc, char *argv[])
   LtLocale::tryToSetLocale();
 
   FILE *analyser = fopen(argv[1], "rb");
+  if(!analyser)
+  {
+    cerr << "Error: Cannot not open file '" << argv[1] << "'." << endl << endl;
+    exit(EXIT_FAILURE);
+  }
   FILE *bidix = fopen(argv[2], "rb");
+  if(!bidix)
+  {
+    cerr << "Error: Cannot not open file '" << argv[2] << "'." << endl << endl;
+    exit(EXIT_FAILURE);
+  }
 
   std::pair<std::pair<Alphabet, wstring>, std::map<wstring, Transducer> > trimmed = trim(analyser, bidix);
   Alphabet alph_t = trimmed.first.first;
@@ -179,6 +187,11 @@ int main(int argc, char *argv[])
 
   // Write the file:
   FILE *output = fopen(argv[3], "wb");
+  if(!output)
+  {
+    cerr << "Error: Cannot not open file '" << argv[3] << "'." << endl << endl;
+    exit(EXIT_FAILURE);
+  }
 
   // letters
   Compression::wstring_write(letters, output);
