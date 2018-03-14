@@ -17,12 +17,13 @@
 #include <lttoolbox/fst_processor.h>
 #include <lttoolbox/compression.h>
 #include <lttoolbox/exception.h>
+#include <lttoolbox/xml_parse_util.h>
 
 #include <iostream>
 #include <cerrno>
 
 #ifdef _WIN32
-#include <utf8_fwrap.hpp>
+#include <utf8_fwrap.h>
 #endif
 
 using namespace std;
@@ -50,26 +51,138 @@ isLastBlankTM(false)
   do_decomposition = false;
   nullFlush = false;
   nullFlushGeneration = false;
+  useIgnoredChars = false;
+  useDefaultIgnoredChars = true;
+  useRestoreChars = false;
   showControlSymbols = false;
   biltransSurfaceForms = false;
   compoundOnlyLSymbol = 0;
   compoundRSymbol = 0;
   compound_max_elements = 4;
 
-  initial_state = new State();
-  current_state = new State();
-}
-
-FSTProcessor::~FSTProcessor()
-{
-  delete current_state;
-  delete initial_state;
+  if(useDefaultIgnoredChars)
+  {
+    initDefaultIgnoredCharacters();
+  }
 }
 
 void
 FSTProcessor::streamError()
 {
   throw Exception("Error: Malformed input stream.");
+}
+
+void
+FSTProcessor::parseICX(string const &fichero)
+{
+  if(useIgnoredChars)
+  {
+    reader = xmlReaderForFile(fichero.c_str(), NULL, 0);
+    if(reader == NULL)
+    {
+      cerr << "Error: cannot open '" << fichero << "'." << endl;
+      exit(EXIT_FAILURE);
+    }
+    int ret = xmlTextReaderRead(reader);
+    while(ret == 1)
+    {
+      procNodeICX();
+      ret = xmlTextReaderRead(reader);
+    }
+    // No point trying to process ignored chars if there are none
+    if(ignored_chars.size() == 0)
+    {
+      useIgnoredChars = false;
+    }
+  }
+}
+
+void
+FSTProcessor::parseRCX(string const &fichero)
+{
+  if(useRestoreChars)
+  {
+    reader = xmlReaderForFile(fichero.c_str(), NULL, 0);
+    if(reader == NULL)
+    {
+      cerr << "Error: cannot open '" << fichero << "'." << endl;
+      exit(EXIT_FAILURE);
+    }
+    int ret = xmlTextReaderRead(reader);
+    while(ret == 1)
+    {
+      procNodeRCX();
+      ret = xmlTextReaderRead(reader);
+    }
+  }
+}
+
+void
+FSTProcessor::procNodeICX()
+{
+  xmlChar  const *xnombre = xmlTextReaderConstName(reader);
+  wstring nombre = XMLParseUtil::towstring(xnombre);
+  if(nombre == L"#text")
+  {
+    /* ignore */
+  }
+  else if(nombre == L"ignored-chars")
+  {
+    /* ignore */
+  }
+  else if(nombre == L"char")
+  {
+    ignored_chars.insert(static_cast<int>(XMLParseUtil::attrib(reader, L"value")[0]));
+  }
+  else if(nombre == L"#comment")
+  {
+    /* ignore */
+  }
+  else
+  {
+    wcerr << L"Error in ICX file (" << xmlTextReaderGetParserLineNumber(reader);
+    wcerr << L"): Invalid node '<" << nombre << L">'." << endl;
+    exit(EXIT_FAILURE);
+  }
+}
+
+void
+FSTProcessor::initDefaultIgnoredCharacters()
+{
+  ignored_chars.insert(173); // '\u00AD', soft hyphen
+}
+
+void
+FSTProcessor::procNodeRCX()
+{
+  xmlChar  const *xnombre = xmlTextReaderConstName(reader);
+  wstring nombre = XMLParseUtil::towstring(xnombre);
+  if(nombre == L"#text")
+  {
+    /* ignore */
+  }
+  else if(nombre == L"restore-chars")
+  {
+    /* ignore */
+  }
+  else if(nombre == L"char")
+  {
+    rcx_current_char = static_cast<int>(XMLParseUtil::attrib(reader, L"value")[0]);
+  }
+  else if(nombre == L"restore-char")
+  {
+    rcx_map[rcx_current_char].insert(static_cast<int>(XMLParseUtil::attrib(reader, L"value")[0]));
+  }
+  else if(nombre == L"#comment")
+  {
+    /* ignore */
+  }
+  else
+  {
+    wcerr << L"Error in RCX file (" << xmlTextReaderGetParserLineNumber(reader);
+    wcerr << L"): Invalid node '<" << nombre << L">'." << endl;
+    exit(EXIT_FAILURE);
+  }
 }
 
 wchar_t
@@ -132,6 +245,12 @@ FSTProcessor::readAnalysis(FILE *input)
   if(feof(input))
   {
     return 0;
+  }
+
+  if((useIgnoredChars || useDefaultIgnoredChars) && ignored_chars.find(val) != ignored_chars.end())
+  {
+    input_buffer.add(val);
+    val = static_cast<wchar_t>(fgetwc_unlocked(input));
   }
 
   if(escaped_chars.find(val) != escaped_chars.end())
@@ -523,7 +642,7 @@ FSTProcessor::calcInitial()
     root.addTransition(0, 0, it->second.getInitial());
   }
 
-  initial_state->init(&root);
+  initial_state.init(&root);
 }
 
 bool
@@ -705,7 +824,242 @@ FSTProcessor::load(FILE *input)
     transducers[name].read(input, alphabet);
     len--;
   }
+}
 
+void
+FSTProcessor::lsx(FILE *input, FILE *output)
+{
+  vector<State> new_states, alive_states;
+  wstring blank, out, in, alt_out, alt_in;
+  bool outOfWord = true;
+  bool finalFound = false;
+  bool plus_thing = false;
+
+  alive_states.push_back(initial_state);
+
+  while(!feof(input))
+  {
+    int val = fgetwc(input);
+
+    if(val == L'+' && isEscaped(val) && !outOfWord)
+    {
+      val = L'$';
+      plus_thing = true;
+    }
+
+    if((val == L'^' && isEscaped(val) && outOfWord) || feof(input))
+    {
+      blankqueue.push(blank);
+
+      if(alive_states.size() == 0)
+      {
+        if(blankqueue.size() > 0)
+        {
+          fputws(blankqueue.front().c_str(), output);
+          fflush(output);
+          blankqueue.pop();
+        }
+
+        alive_states.push_back(initial_state);
+
+        alt_in = L"";
+        for(int i=0; i < (int) in.size(); i++) // FIXME indexing
+        {
+          alt_in += in[i];
+          if(in[i] == L'$' && in[i+1] == L'^' && blankqueue.size() > 0)
+          {
+            // in.insert(i+1, blankqueue.front().c_str());
+            alt_in += blankqueue.front().c_str();
+            blankqueue.pop();
+          }
+        }
+        in = alt_in;
+        fputws(in.c_str(), output);
+        fflush(output);
+        in = L"";
+        finalFound = false;
+      }
+      else if(finalFound && alive_states.size() == 1)
+      {
+        finalFound = false;
+      }
+
+      blank = L"";
+      in += val;
+      outOfWord = false;
+      continue;
+    }
+
+//    wcerr << L"\n[!] " << (wchar_t)val << L" ||| " << outOfWord << endl;
+
+    if(outOfWord)
+    {
+      blank += val;
+      continue;
+    }
+
+    if((feof(input) || val == L'$') && !outOfWord) // && isEscaped(val)
+    {
+      new_states.clear();
+      for(vector<State>::const_iterator it = alive_states.begin(); it != alive_states.end(); it++)
+      {
+        State s = *it;
+//        wcerr << endl << L"[0] FEOF | $ | " << s.size() << L" | " << s.isFinal(all_finals) << endl;
+        s.step(alphabet(L"<$>"));
+//        wcerr << endl << L"[1] FEOF | $ | " << s.size() << L" | " << s.isFinal(all_finals) << endl;
+        if(s.size() > 0)
+        {
+          new_states.push_back(s);
+        }
+
+/*        if(s.isFinal(all_finals))
+        {
+          out += s.filterFinals(all_finals, alphabet, escaped_chars);
+          new_states.push_back(*initial_state);
+        }*/
+
+        if(s.isFinal(all_finals))
+        {
+          new_states.clear();
+          out = s.filterFinals(all_finals, alphabet, escaped_chars);
+
+          new_states.push_back(initial_state);
+
+          alt_out = L"";
+          for (int i=0; i < (int) out.size(); i++)
+          {
+            wchar_t c = out.at(i);
+            if(c == L'/')
+            {
+              alt_out += L'^';
+            }
+            else if(out[i-1] == L'<' && c == L'$' && out[i+1] == L'>') // indexing
+            {
+              alt_out += c;
+              alt_out += L'^';
+            }
+            else if(!(c == L'<' && out[i+1] == L'$' && out[i+2] == L'>') && !(out[i-2] == L'<' && out[i-1] == L'$' && c == L'>'))
+            {
+              alt_out += c;
+            }
+          }
+          out = alt_out;
+
+
+          if(out[out.length()-1] == L'^')
+          {
+            out = out.substr(0, out.length()-1); // extra ^ at the end
+            if(plus_thing)
+            {
+              out[out.size()-1] = L'+';
+              plus_thing = false;
+            }
+          }
+          else // take# out ... of
+          {
+            for(int i=out.length()-1; i>=0; i--) // indexing
+            {
+              if(out.at(i) == L'$')
+              {
+                out.insert(i+1, L" ");
+                break;
+              }
+            }
+            out += L'$';
+          }
+
+          if(blankqueue.size() > 0)
+          {
+            fputws(blankqueue.front().c_str(), output);
+            blankqueue.pop();
+          }
+
+          alt_out = L"";
+          for(int i=0; i < (int) out.size(); i++) // indexing
+          {
+            if((out.at(i) == L'$') && blankqueue.size() > 0)
+            {
+              alt_out += out.at(i);
+              alt_out += blankqueue.front().c_str();
+              blankqueue.pop();
+            }
+            else if((out.at(i) == L'$') && blankqueue.size() == 0 && i != (int) out.size()-1)
+            {
+              alt_out += out.at(i);
+              alt_out += L' ';
+            }
+            else if(out.at(i) == L' ' && blankqueue.size() > 0)
+            {
+              alt_out += blankqueue.front().c_str();
+              blankqueue.pop();
+            }
+            else
+            {
+              alt_out += out.at(i);
+            }
+          }
+          out = alt_out;
+
+          fputws(out.c_str(), output);
+          flushBlanks(output);
+          finalFound = true;
+          out = L"";
+          in = L"";
+        }
+      }
+
+      alive_states.swap(new_states);
+      outOfWord = true;
+
+      if(!finalFound)
+      {
+        in += val; //do not remove
+      }
+      continue;
+    }
+
+    if(!outOfWord) // && (!(feof(input) || val == L'$')))
+    {
+      if(val == L'<') // tag
+      {
+        wstring tag = readFullBlock(input, L'<', L'>');
+        in += tag;
+        if(!alphabet.isSymbolDefined(tag))
+        {
+          alphabet.includeSymbol(tag);
+        }
+        val = static_cast<int>(alphabet(tag));
+      }
+      else
+      {
+        in += (wchar_t) val;
+      }
+
+      new_states.clear();
+      for(vector<State>::const_iterator it = alive_states.begin(); it != alive_states.end(); it++)
+      {
+        State s = *it;
+        if(val < 0)
+        {
+          s.step_override(val, alphabet(L"<ANY_TAG>"), val);
+        }
+        else if(val > 0)
+        {
+          int val_lowercase = towlower(val);
+          s.step_override(val_lowercase, alphabet(L"<ANY_CHAR>"), val); // FIXME deal with cases! in step_override
+        }
+
+        if(s.size() > 0)
+        {
+          new_states.push_back(s);
+        }
+
+      }
+      alive_states.swap(new_states);
+    }
+  }
+
+  flushBlanks(output);
 }
 
 void
@@ -736,6 +1090,7 @@ FSTProcessor::initTMAnalysis()
 void
 FSTProcessor::initGeneration()
 {
+  setIgnoredChars(false);
   calcInitial();
   for(map<wstring, TransExe, Ltstr>::iterator it = transducers.begin(),
                                              limit = transducers.end();
@@ -760,53 +1115,51 @@ FSTProcessor::initBiltrans()
 
 
 wstring
-FSTProcessor::compoundAnalysis(wstring input_word, bool uppercase, bool firstupper) {
-    const int MAX_COMBINATIONS = 500;
-    //wcerr << L"compoundAnalysis(input_word = " << input_word << L")" << endl;
+FSTProcessor::compoundAnalysis(wstring input_word, bool uppercase, bool firstupper)
+{
+  const int MAX_COMBINATIONS = 32767;
 
-    State current_state = *initial_state;
+  State current_state = initial_state;
 
-    for(unsigned int i=0; i<input_word.size(); i++) {
-        wchar_t val=input_word.at(i);
+  for(unsigned int i=0; i<input_word.size(); i++)
+  {
+    wchar_t val=input_word.at(i);
 
-        //wcerr << val << L" før step " << i << L" current_state = " << current_state.getReadableString(alphabet) << endl;
-        current_state.step_case(val, caseSensitive);
+    current_state.step_case(val, caseSensitive);
 
-        if(current_state.size() > MAX_COMBINATIONS) {
-            wcerr << L"Warning: compoundAnalysis's MAX_COMBINATIONS exceeded for '" << input_word << L"'" << endl;
-            wcerr << L"         gave up at char " << i << L" '" << val << L"'." << endl;
+    if(current_state.size() > MAX_COMBINATIONS)
+    {
+      wcerr << L"Warning: compoundAnalysis's MAX_COMBINATIONS exceeded for '" << input_word << L"'" << endl;
+      wcerr << L"         gave up at char " << i << L" '" << val << L"'." << endl;
 
-            wstring nullString = L"";
-            return  nullString;
-        }
-
-        //wcerr << val << L" eft step " << i << L" current_state = " << current_state.getReadableString(alphabet) << endl;
-
-        if(i < input_word.size()-1)
-            current_state.restartFinals(all_finals, compoundOnlyLSymbol, initial_state, '+');
-
-        //wcerr << val << " eft rest " << i << " current_state = " << current_state.getReadableString(alphabet) << endl;
-        //wcerr << i << " result = "  << current_state.filterFinals(all_finals, alphabet, escaped_chars, uppercase, firstupper) << endl;
-        //wcerr << i << " -- size = " << current_state.size() << endl;
-
-        if(current_state.size()==0) {
-            wstring nullString = L"";
-            return nullString;
-        }
+      wstring nullString = L"";
+      return  nullString;
     }
 
-    current_state.pruneCompounds(compoundRSymbol, '+', compound_max_elements);
-    wstring result = current_state.filterFinals(all_finals, alphabet, escaped_chars, uppercase, firstupper);
-    //wcerr << L"rrresult = " << result << endl;
+    if(i < input_word.size()-1)
+    {
+      current_state.restartFinals(all_finals, compoundOnlyLSymbol, &initial_state, '+');
+    }
 
-    return result;
+    if(current_state.size()==0)
+    {
+      wstring nullString = L"";
+      return nullString;
+    }
+  }
+
+  current_state.pruneCompounds(compoundRSymbol, '+', compound_max_elements);
+  wstring result = current_state.filterFinals(all_finals, alphabet, escaped_chars, uppercase, firstupper);
+
+  return result;
 }
 
 
 
 void
-FSTProcessor::initDecompositionSymbols() {
-  if ((compoundOnlyLSymbol=alphabet(L"<:co:only-L>")) == 0
+FSTProcessor::initDecompositionSymbols()
+{
+  if((compoundOnlyLSymbol=alphabet(L"<:co:only-L>")) == 0
      && (compoundOnlyLSymbol=alphabet(L"<:compound:only-L>")) == 0
      && (compoundOnlyLSymbol=alphabet(L"<@co:only-L>")) == 0
      && (compoundOnlyLSymbol=alphabet(L"<@compound:only-L>")) == 0
@@ -814,10 +1167,12 @@ FSTProcessor::initDecompositionSymbols() {
   {
     wcerr << L"Warning: Decomposition symbol <:compound:only-L> not found" << endl;
   }
-  else if (!showControlSymbols)
-      alphabet.setSymbol(compoundOnlyLSymbol, L"");
+  else if(!showControlSymbols)
+  {
+    alphabet.setSymbol(compoundOnlyLSymbol, L"");
+  }
 
-  if ((compoundRSymbol=alphabet(L"<:co:R>")) == 0
+  if((compoundRSymbol=alphabet(L"<:co:R>")) == 0
      && (compoundRSymbol=alphabet(L"<:compound:R>")) == 0
      && (compoundRSymbol=alphabet(L"<@co:R>")) == 0
      && (compoundRSymbol=alphabet(L"<@compound:R>")) == 0
@@ -825,184 +1180,20 @@ FSTProcessor::initDecompositionSymbols() {
   {
     wcerr << L"Warning: Decomposition symbol <:compound:R> not found" << endl;
   }
-  else if (!showControlSymbols)
-      alphabet.setSymbol(compoundRSymbol, L"");
+  else if(!showControlSymbols)
+  {
+    alphabet.setSymbol(compoundRSymbol, L"");
+  }
 }
 
 
 void
-FSTProcessor::initDecomposition() {
+FSTProcessor::initDecomposition()
+{
   do_decomposition = true;
   initAnalysis();
   initDecompositionSymbols();
 }
-
-/*wstring
-FSTProcessor::decompose(wstring w)
-{
-        State current_state = *initial_state;
-
-        vector<vector<wstring> > elements;
-        bool firstupper = false, uppercase = false, last = false;
-        unsigned int index = 0;
-
-        if(w.length() < 7) // Heuristic: Do not try and decompound short words
-        {
-          return L"";
-        }
-        //wcerr << L"+ decompose: " << w << endl;
-
-        for (unsigned int i = 0; i < w.length(); i++)
-        {
-          //if(i == (w.length() - 1))
-          if(i == (w.length()))
-          {
-            last = true;
-          }
-
-          State previous_state = current_state;
-
-          unsigned int val = w.at(i);
-
-          //wcerr << L"++ [" << last << L"][" << current_state.size() << L"] decompose: " << w.at(i) << endl;
-
-          if(last)
-          {
-            previous_state = current_state;
-          }
-          else
-          {
-            previous_state = current_state;
-
-            if (current_state.size() != 0)
-            {
-              if (!isAlphabetic(val) && iswupper(val) && !caseSensitive)
-              {
-                current_state.step(val, towlower(val));
-              }
-              else
-              {
-                //wcerr << L"+++ step: " << w.at(i) << endl;
-                current_state.step(val);
-              }
-            }
-          }
-          if(i == (w.length())-1)
-          {
-            last = true;
-          }
-
-          if (current_state.size() == 0 || last)
-          {
-            //wcerr << L"+++ [" << last << L"][" << current_state.size() << L"]" << endl;
-            if(current_state.isFinal(all_finals))
-            {
-              previous_state = current_state;
-            }
-
-            if(previous_state.isFinal(all_finals))
-            {
-              firstupper = iswupper(w.at(0));
-              wstring result = previous_state.filterFinals(all_finals, alphabet,
-                                        escaped_chars,
-                                        uppercase, firstupper);
-
-              result = result.substr(1, result.size());
-              //wcerr << L"++++ result[" << index << L"]: " <<  result << endl;
-              vector<wstring> lfs;
-              wstring::size_type pos;
-
-              pos = result.find(L'/');
-              if(pos == wstring::npos)
-              {
-                lfs.push_back(result);
-              }
-              else
-              {
-                while(pos != wstring::npos)
-                {
-                  lfs.push_back(result.substr(0, pos));
-                  result.erase(0, pos + 1);
-                  pos = result.find(L'/');
-                }
-                lfs.push_back(result.substr(0, pos));
-              }
-              elements.push_back(lfs); // Add final analysis
-              index++;
-            }
-            else
-            {
-              return L"";
-            }
-
-            if (!last)
-            {
-              current_state = *initial_state;
-              i--;
-            }
-          }
-        }
-
-        //wcerr << L"+++ index: " << index << endl;
-        if(index > 3 || index < 2)  // Heuristic: Only permit binary/trinary compounds
-        {
-          return L"";
-        }
-
-        wstring lf = L"";
-
-        if(index != elements.size())
-        {
-          //wcerr << L"++ index != elements.size(): " << index << L" != " << elements.size() << endl;
-          return L"";
-        }
-
-        vector<wstring> first_elements = elements.at(0);
-        vector<wstring> second_elements = elements.at(1);
-
-        if(first_elements.size() == 0 || second_elements.size() == 0)
-        {
-          //wcerr << L"++ first or second empty" << endl;
-          return L"";
-        }
-
-        if(index == 2)
-        {
-          for(unsigned int j = 0; j < first_elements.size(); j++)
-          {
-            for(unsigned int y = 0; y < second_elements.size(); y++)
-            {
-              wstring analysis = first_elements.at(j) + L"+" + second_elements.at(y);
-              lf = lf + L"/" + analysis;
-              //wcerr << L"++++++ [" << j << L"][" << y << L"] compound_analysis: " << analysis << endl;
-            }
-          }
-        }
-        else if(index == 3)
-        {
-          vector<wstring> third_elements = elements.at(2);
-
-          for(unsigned int j = 0; j < first_elements.size(); j++)
-          {
-            for(unsigned int k = 0; k < second_elements.size(); k++)
-            {
-              for(unsigned int y = 0; y < third_elements.size(); y++)
-              {
-                wstring analysis = first_elements.at(j) + L"+" + second_elements.at(k) + L"+" + third_elements.at(y);
-                lf = lf + L"/" + analysis;
-                //wcerr << L"++++++ [" << j << L"][" << y << L"] compound_analysis: " << analysis << endl;
-              }
-            }
-          }
-
-        }
-        else
-        {
-          return L"";
-        }
-        //wcerr << L"+ decompose: " << lf << endl;
-        return lf;
-}*/
 
 void
 FSTProcessor::analysis(FILE *input, FILE *output)
@@ -1015,11 +1206,12 @@ FSTProcessor::analysis(FILE *input, FILE *output)
   bool last_incond = false;
   bool last_postblank = false;
   bool last_preblank = false;
-  State current_state = *initial_state;
+  State current_state = initial_state;
   wstring lf = L"";
   wstring sf = L"";
   int last = 0;
   bool firstupper = false, uppercase = false;
+  map<int, set<int> >::iterator rcx_map_ptr;
 
   while(wchar_t val = readAnalysis(input))
   {
@@ -1111,13 +1303,37 @@ FSTProcessor::analysis(FILE *input, FILE *output)
       last = input_buffer.getPos();
     }
 
-    if(!iswupper(val) || caseSensitive)
+    if(useRestoreChars && rcx_map.find(val) != rcx_map.end())
     {
-      current_state.step(val);
+      rcx_map_ptr = rcx_map.find(val);
+      set<int> tmpset = rcx_map_ptr->second;
+      if(!iswupper(val) || caseSensitive)
+      {
+        current_state.step(val, tmpset);
+      }
+      else if(rcx_map.find(towlower(val)) != rcx_map.end())
+      {
+        rcx_map_ptr = rcx_map.find(tolower(val));
+        tmpset.insert(tolower(val));
+        tmpset.insert(rcx_map_ptr->second.begin(), rcx_map_ptr->second.end());
+        current_state.step(val, tmpset);
+      }
+      else
+      {
+        tmpset.insert(tolower(val));
+        current_state.step(val, tmpset);
+      }
     }
     else
     {
-      current_state.step(val, towlower(val));
+      if(!iswupper(val) || caseSensitive)
+      {
+        current_state.step(val);
+      }
+      else
+      {
+        current_state.step(val, towlower(val));
+      }
     }
 
     if(current_state.size() != 0)
@@ -1259,7 +1475,7 @@ FSTProcessor::analysis(FILE *input, FILE *output)
         input_buffer.back(1);
       }
 
-      current_state = *initial_state;
+      current_state = initial_state;
       lf = L"";
       sf = L"";
       last_incond = false;
@@ -1342,7 +1558,7 @@ FSTProcessor::transliteration_wrapper_null_flush(FILE *input, FILE *output)
 void
 FSTProcessor::tm_analysis(FILE *input, FILE *output)
 {
-  State current_state = *initial_state;
+  State current_state = initial_state;
   wstring lf = L"";
   wstring sf = L"";
   int last = 0;
@@ -1485,7 +1701,7 @@ FSTProcessor::tm_analysis(FILE *input, FILE *output)
         input_buffer.back(1);
       }
 
-      current_state = *initial_state;
+      current_state = initial_state;
       lf = L"";
       sf = L"";
     }
@@ -1504,7 +1720,7 @@ FSTProcessor::generation(FILE *input, FILE *output, GenerationMode mode)
     generation_wrapper_null_flush(input, output, mode);
   }
 
-  State current_state = *initial_state;
+  State current_state = initial_state;
   wstring sf = L"";
 
   outOfWord = false;
@@ -1570,8 +1786,12 @@ FSTProcessor::generation(FILE *input, FILE *output, GenerationMode mode)
       }
       else if(current_state.isFinal(all_finals))
       {
-        bool uppercase = sf.size() > 1 && iswupper(sf[1]);
-        bool firstupper= iswupper(sf[0]);
+        bool firstupper = false, uppercase = false;
+        if(!dictionaryCase)
+        {
+          uppercase = sf.size() > 1 && iswupper(sf[1]);
+          firstupper= iswupper(sf[0]);
+        }
 
         if(mode == gm_tagged || mode == gm_tagged_nm)
         {
@@ -1625,7 +1845,7 @@ FSTProcessor::generation(FILE *input, FILE *output, GenerationMode mode)
         }
       }
 
-      current_state = *initial_state;
+      current_state = initial_state;
       sf = L"";
     }
     else if(iswspace(val) && sf.size() == 0)
@@ -1643,7 +1863,14 @@ FSTProcessor::generation(FILE *input, FILE *output, GenerationMode mode)
       {
 	if(!alphabet.isTag(val) && iswupper(val) && !caseSensitive)
 	{
-	  current_state.step(val, towlower(val));
+          if(mode == gm_carefulcase)
+          {
+	    current_state.step_careful(val, towlower(val));
+          }
+          else
+          {
+	    current_state.step(val, towlower(val));
+          }
 	}
 	else
 	{
@@ -1663,7 +1890,7 @@ FSTProcessor::postgeneration(FILE *input, FILE *output)
   }
 
   bool skip_mode = true;
-  State current_state = *initial_state;
+  State current_state = initial_state;
   wstring lf = L"";
   wstring sf = L"";
   int last = 0;
@@ -1809,7 +2036,7 @@ FSTProcessor::postgeneration(FILE *input, FILE *output)
 	  }
 	}
 
-	current_state = *initial_state;
+	current_state = initial_state;
 	lf = L"";
 	sf = L"";
 	skip_mode = true;
@@ -1829,7 +2056,7 @@ FSTProcessor::transliteration(FILE *input, FILE *output)
     transliteration_wrapper_null_flush(input, output);
   }
 
-  State current_state = *initial_state;
+  State current_state = initial_state;
   wstring lf = L"";
   wstring sf = L"";
   int last = 0;
@@ -1845,7 +2072,7 @@ FSTProcessor::transliteration(FILE *input, FILE *output)
       if(!lf.empty())
       {
         fputws_unlocked(lf.substr(1).c_str(), output);
-        current_state = *initial_state;
+        current_state = initial_state;
         lf = L"";
         sf = L"";
       }
@@ -1902,7 +2129,7 @@ FSTProcessor::transliteration(FILE *input, FILE *output)
             fputwc_unlocked(val, output);
           }
         }
-        current_state = *initial_state;
+        current_state = initial_state;
         lf = L"";
         sf = L"";
       }
@@ -1915,7 +2142,7 @@ FSTProcessor::transliteration(FILE *input, FILE *output)
 wstring
 FSTProcessor::biltransfull(wstring const &input_word, bool with_delim)
 {
-  State current_state = *initial_state;
+  State current_state = initial_state;
   wstring result = L"";
   unsigned int start_point = 1;
   unsigned int end_point = input_word.size()-2;
@@ -2082,7 +2309,7 @@ FSTProcessor::biltransfull(wstring const &input_word, bool with_delim)
 wstring
 FSTProcessor::biltrans(wstring const &input_word, bool with_delim)
 {
-  State current_state = *initial_state;
+  State current_state = initial_state;
   wstring result = L"";
   unsigned int start_point = 1;
   unsigned int end_point = input_word.size()-2;
@@ -2288,7 +2515,7 @@ FSTProcessor::bilingual(FILE *input, FILE *output)
     bilingual_wrapper_null_flush(input, output);
   }
 
-  State current_state = *initial_state;
+  State current_state = initial_state;
   wstring sf = L"";		// source language analysis
   wstring queue = L"";		// symbols to be added to each target
   wstring result = L"";		// result of looking up analysis in bidix
@@ -2368,7 +2595,7 @@ FSTProcessor::bilingual(FILE *input, FILE *output)
       surface = L"";
       queue = L"";
       result = L"";
-      current_state = *initial_state;
+      current_state = initial_state;
       sf = L"";
       seentags = false;
     }
@@ -2451,7 +2678,7 @@ FSTProcessor::bilingual(FILE *input, FILE *output)
 pair<wstring, int>
 FSTProcessor::biltransWithQueue(wstring const &input_word, bool with_delim)
 {
-  State current_state = *initial_state;
+  State current_state = initial_state;
   wstring result = L"";
   unsigned int start_point = 1;
   unsigned int end_point = input_word.size()-2;
@@ -2633,7 +2860,7 @@ FSTProcessor::biltransWithQueue(wstring const &input_word, bool with_delim)
 wstring
 FSTProcessor::biltransWithoutQueue(wstring const &input_word, bool with_delim)
 {
-  State current_state = *initial_state;
+  State current_state = initial_state;
   wstring result = L"";
   unsigned int start_point = 1;
   unsigned int end_point = input_word.size()-2;
@@ -2756,14 +2983,14 @@ FSTProcessor::biltransWithoutQueue(wstring const &input_word, bool with_delim)
 bool
 FSTProcessor::valid() const
 {
-  if(initial_state->isFinal(all_finals))
+  if(initial_state.isFinal(all_finals))
   {
     wcerr << L"Error: Invalid dictionary (hint: the left side of an entry is empty)" << endl;
     return false;
   }
   else
   {
-    State s = *initial_state;
+    State s = initial_state;
     s.step(L' ');
     if(s.size() != 0)
     {
@@ -2847,7 +3074,7 @@ FSTProcessor::SAO(FILE *input, FILE *output)
 {
   bool last_incond = false;
   bool last_postblank = false;
-  State current_state = *initial_state;
+  State current_state = initial_state;
   wstring lf = L"";
   wstring sf = L"";
   int last = 0;
@@ -2984,7 +3211,7 @@ FSTProcessor::SAO(FILE *input, FILE *output)
         input_buffer.back(1);
       }
 
-      current_state = *initial_state;
+      current_state = initial_state;
       lf = L"";
       sf = L"";
       last_incond = false;
@@ -3033,6 +3260,24 @@ void
 FSTProcessor::setNullFlush(bool const value)
 {
   nullFlush = value;
+}
+
+void
+FSTProcessor::setIgnoredChars(bool const value)
+{
+  useIgnoredChars = value;
+}
+
+void
+FSTProcessor::setRestoreChars(bool const value)
+{
+  useRestoreChars = value;
+}
+
+void
+FSTProcessor::setUseDefaultIgnoredChars(bool const value)
+{
+  useDefaultIgnoredChars = value;
 }
 
 bool

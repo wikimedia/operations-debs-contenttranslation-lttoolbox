@@ -123,11 +123,27 @@ class BidixEpsilons(unittest.TestCase, TrimProcTest):
     bidix = "data/bidix-epsilons-bi.dix"
     bidir = "rl"
 
+class AlphabeticAfterGroup(unittest.TestCase, TrimProcTest):
+    inputs = ["as"]
+    expectedOutputs = ["^as/*as$"]
+    monodix = "data/alphabetic-after-group-mono.dix"
+    bidix = "data/alphabetic-after-group-bi.dix"
+    bidir = "lr"
+
 class DoubleClitics(unittest.TestCase, TrimProcTest):
     inputs = ["a-b-c d"]
     expectedOutputs = ["^a-b-c d/a<vblex><ger>+b<prn><enc>+c<prn><enc># d$"]
     monodix = "data/double-clitics-mono.dix"
     bidix = "data/double-clitics-bi.dix"
+    bidir = "lr"
+
+
+class GroupAfterJoin(unittest.TestCase, TrimProcTest):
+    "https://sourceforge.net/p/apertium/tickets/117/"
+    inputs = ["notG a"]
+    expectedOutputs = ["^notG/notG<vblex><inf>$ ^a/*a$"]
+    monodix = "data/group-after-join-mono.dix"
+    bidix = "data/group-after-join-bi.dix"
     bidir = "lr"
 
 

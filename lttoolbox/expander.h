@@ -18,6 +18,7 @@
 #define _EXPANDER_
 
 #include <lttoolbox/ltstr.h>
+#include <lttoolbox/string_to_wostream.h>
 
 #include <list>
 #include <map>
@@ -109,7 +110,7 @@ private:
 
   /**
    * Parse the &lt;p&lt; element
-   * @return a pair of string, left part and right part of a transduction
+   * @return a pair of strings, left part and right part of a transduction
    */
   pair<wstring, wstring> procTransduction();
 
@@ -118,6 +119,13 @@ private:
    * @return a string from the dictionary's entry
    */
   wstring procIdentity();
+
+  /**
+   * Parse the &lt;ig&lt; element
+   * @return a pair of strings, whose right part begins with '#'
+   * but are otherwise identical
+   */
+  pair<wstring, wstring> procIdentityGroup();
 
   /**
    * Parse the &lt;par&gt; element
