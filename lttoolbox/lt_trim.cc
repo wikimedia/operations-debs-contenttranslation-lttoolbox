@@ -117,9 +117,9 @@ trim(FILE *file_mono, FILE *file_bi)
 
   for(std::map<wstring, Transducer>::iterator it = trans_mono.begin(); it != trans_mono.end(); it++)
   {
-    Transducer trimmed_tmp = it->second.intersect(moved_transducer,
-                                                  alph_mono,
-                                                  alph_prefix);
+    Transducer trimmed = it->second.intersect(moved_transducer,
+                                              alph_mono,
+                                              alph_prefix);
 
     wcout << it->first << " " << it->second.size();
     wcout << " " << it->second.numberOfTransitions() << endl;
@@ -128,13 +128,13 @@ trim(FILE *file_mono, FILE *file_bi)
       wcerr << L"Warning: empty section! Skipping it ..."<<endl;
       trans_mono[it->first].clear();
     }
-    else if(trimmed_tmp.hasNoFinals()) {
+    else if(trimmed.hasNoFinals()) {
       wcerr << L"Warning: section had no final state after trimming! Skipping it ..."<<endl;
       trans_mono[it->first].clear();
     }
     else {
-      trimmed_tmp.minimize();
-      trans_mono[it->first] = trimmed_tmp;
+      trimmed.minimize();
+      trans_mono[it->first] = trimmed;
     }
   }
 
@@ -155,13 +155,13 @@ int main(int argc, char *argv[])
   FILE *analyser = fopen(argv[1], "rb");
   if(!analyser)
   {
-    cerr << "Error: Cannot not open file '" << argv[1] << "'." << endl << endl;
+    wcerr << "Error: Cannot not open file '" << argv[1] << "'." << endl << endl;
     exit(EXIT_FAILURE);
   }
   FILE *bidix = fopen(argv[2], "rb");
   if(!bidix)
   {
-    cerr << "Error: Cannot not open file '" << argv[2] << "'." << endl << endl;
+    wcerr << "Error: Cannot not open file '" << argv[2] << "'." << endl << endl;
     exit(EXIT_FAILURE);
   }
 
@@ -189,7 +189,7 @@ int main(int argc, char *argv[])
   FILE *output = fopen(argv[3], "wb");
   if(!output)
   {
-    cerr << "Error: Cannot not open file '" << argv[3] << "'." << endl << endl;
+    wcerr << "Error: Cannot not open file '" << argv[3] << "'." << endl << endl;
     exit(EXIT_FAILURE);
   }
 

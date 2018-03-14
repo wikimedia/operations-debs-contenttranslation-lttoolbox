@@ -177,6 +177,17 @@ public:
    */
   void joinFinals(int const epsilon_tag = 0);
 
+
+  /**
+   * Return a copy of the set of final states
+   */
+  set<int> getFinals() const;
+
+  /**
+   * Return reference to the transitions
+   */
+  map<int, multimap<int, int> >& getTransitions();
+
   /**
    * Reverse all the transductions of a transducer
    * @param epsilon_tag the tag to take as epsilon
@@ -277,6 +288,9 @@ public:
    * @param decalage offset to sum to the tags
    */
   void read(FILE *input, int const decalage = 0);
+
+  void serialise(std::ostream &serialised) const;
+  void deserialise(std::istream &serialised);
 
   /**
    * Insert another transducer into this, unifying source and targets.

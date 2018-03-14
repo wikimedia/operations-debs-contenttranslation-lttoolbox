@@ -24,6 +24,7 @@
 #include <lttoolbox/my_stdio.h>
 #include <lttoolbox/state.h>
 #include <lttoolbox/trans_exe.h>
+#include <libxml/xmlreader.h>
 
 #include <cwchar>
 #include <map>
@@ -42,7 +43,8 @@ enum GenerationMode
   gm_unknown,    // display unknown words, clear transfer and generation tags
   gm_all,        // display all
   gm_tagged,     // tagged generation
-  gm_tagged_nm   // clean tagged generation
+  gm_tagged_nm,  // clean tagged generation
+  gm_carefulcase // try lowercase iff no uppercase
 };
 
 /**
@@ -59,12 +61,12 @@ private:
   /**
    * Current state of lexical analysis
    */
-  State *current_state;
+  State current_state;
 
   /**
    * Initial state of every token
    */
-  State *initial_state;
+  State initial_state;
 
   /**
    * Set of final states of inconditional sections in the dictionaries
@@ -105,6 +107,21 @@ private:
    * Set of characters to escape with a backslash
    */
   set<wchar_t> escaped_chars;
+
+  /**
+   * Set of characters to ignore
+   */
+  set<wchar_t> ignored_chars;
+
+  /**
+   * Mapping of characters for simplistic diacritic restoration specified in RCX files
+   */
+  map<int, set<int> > rcx_map;
+
+  /**
+   * Original char being restored
+   */
+  int rcx_current_char;
 
   /**
    * Alphabet
@@ -153,6 +170,21 @@ private:
    * nullFlush property for the skipUntil function
    */
   bool nullFlushGeneration;
+
+  /**
+   * if true, ignore the provided set of characters
+   */
+  bool useIgnoredChars;
+
+  /**
+   * if true, attempt simplistic diacritic restoration
+   */
+  bool useRestoreChars;
+
+  /**
+   * if true, skips loading the default set of ignored characters
+   */
+  bool useDefaultIgnoredChars;
 
   /**
    * try analysing unknown words as compounds
@@ -349,10 +381,15 @@ private:
 
   wstring compose(wstring const &lexforms, wstring const &queue) const;
 
+  void procNodeICX();
+  void procNodeRCX();
+  void initDefaultIgnoredCharacters();
+
   bool isLastBlankTM;
+
+  xmlTextReaderPtr reader;
 public:
   FSTProcessor();
-  ~FSTProcessor();
 
   void initAnalysis();
   void initTMAnalysis();
@@ -374,15 +411,22 @@ public:
   pair<wstring, int> biltransWithQueue(wstring const &input_word, bool with_delim = true);
   wstring biltransWithoutQueue(wstring const &input_word, bool with_delim = true);
   void SAO(FILE *input = stdin, FILE *output = stdout);
+  void parseICX(string const &fichero);
+  void parseRCX(string const &fichero);
 
   void load(FILE *input);
+
+  void lsx(FILE *input, FILE *output);
 
   bool valid() const;
 
   void setCaseSensitiveMode(bool const value);
   void setDictionaryCaseMode(bool const value);
   void setBiltransSurfaceForms(bool const value);
+  void setIgnoredChars(bool const value);
+  void setRestoreChars(bool const value);
   void setNullFlush(bool const value);
+  void setUseDefaultIgnoredChars(bool);
   bool getNullFlush();
   bool getDecompoundingMode();
 };

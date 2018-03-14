@@ -16,6 +16,8 @@
  */
 #include <lttoolbox/pattern_list.h>
 #include <lttoolbox/compression.h>
+#include <lttoolbox/serialiser.h>
+#include <lttoolbox/deserialiser.h>
 
 #include <cstdlib>
 #include <iostream>
@@ -399,14 +401,36 @@ PatternList::read(FILE *input)
   }
 }
 
+void
+PatternList::serialise(std::ostream &serialised) const
+{
+  alphabet.serialise(serialised);
+  transducer.serialise(serialised);
+  Serialiser<map<int, int> >::serialise(final_type, serialised);
+}
+
+void
+PatternList::deserialise(std::istream &serialised)
+{
+  alphabet.deserialise(serialised);
+  transducer.deserialise(serialised);
+  final_type = Deserialiser<map<int, int> >::deserialise(serialised);
+}
+
 MatchExe *
-PatternList::newMatchExe()
+PatternList::newMatchExe() const
 {
   return new MatchExe(transducer, final_type);
 }
 
 Alphabet &
 PatternList::getAlphabet()
+{
+  return alphabet;
+}
+
+const Alphabet &
+PatternList::getAlphabet() const
 {
   return alphabet;
 }
