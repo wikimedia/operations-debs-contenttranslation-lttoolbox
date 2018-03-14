@@ -1,3 +1,16 @@
+lttoolbox (3.4.0~r84331-1+wmf1) jessie-wikimedia; urgency=low
+
+  * Update to latest upstream.
+  * debian/control:
+   + Version bump, so undo the g++-5 renaming.
+   + Updated Standards-Version to 4.1.3.
+   + Removed transitional dummy package.
+  * Updated debian/watch file.
+  * Updated lintian overrides.
+  * URLs: http->https.
+
+ -- Kartik Mistry <kartik@debian.org>  Fri, 16 Mar 2018 16:14:52 +0530
+
 lttoolbox (3.3.3~r68466-2+wmf1) jessie; urgency=low
 
   * Rebuild for Jessie
