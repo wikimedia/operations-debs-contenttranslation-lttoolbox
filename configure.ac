@@ -5,7 +5,7 @@ AC_PREREQ(2.52)
 
 m4_define([required_libxml_version], [2.6.17])
 
-AC_INIT([lttoolbox/lttoolbox.h], [3.4.0], [sortiz@users.sourceforge.net])
+AC_INIT([lttoolbox/lttoolbox.h], [3.4.2], [sortiz@users.sourceforge.net])
 AC_CONFIG_HEADER([lttoolbox/lttoolbox_config.h])
 
 AC_CANONICAL_SYSTEM
@@ -15,7 +15,7 @@ GENERIC_LIBRARY_NAME=lttoolbox
 # Release versioning
 GENERIC_MAJOR_VERSION=3
 GENERIC_MINOR_VERSION=4
-GENERIC_MICRO_VERSION=0
+GENERIC_MICRO_VERSION=2
 
 # API version (often = GENERIC_MAJOR_VERSION.GENERIC_MINOR_VERSION)
 GENERIC_API_VERSION=$GENERIC_MAJOR_VERSION.$GENERIC_MINOR_VERSION
@@ -129,6 +129,16 @@ AX_CHECK_COMPILE_FLAG([-std=c++20], [CXXFLAGS="$CXXFLAGS -std=c++20"], [
   ])
  ])
 ])
+
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+#include <cstddef>
+#include <cstdint>
+#include <type_traits>
+]],[[
+using namespace std;
+static_assert(!is_same<size_t,uint32_t>::value, "size_t == uint32_t");
+static_assert(!is_same<size_t,uint64_t>::value, "size_t == uint64_t");
+   ]])], [AC_DEFINE([SIZET_NOT_CSTDINT], [1], [size_t != (uint32_t, uint64_t)])])
 
 AM_PATH_PYTHON([2], [], [AC_MSG_WARN([Can't run 'make test' without Python installed.])])
 
