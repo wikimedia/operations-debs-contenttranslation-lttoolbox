@@ -1,3 +1,10 @@
+lttoolbox (3.4.2-2+wmf2) jessie-wikimedia; urgency=low
+
+  * New upstream release.
+  * Minor updates in debian/control, debian/rule and updated debian/watch.
+
+ -- Kartik Mistry <kartik@debian.org>  Thu, 28 Jun 2018 14:04:24 +0530
+
 lttoolbox (3.4.0~r84331-1+wmf1) jessie-wikimedia; urgency=low
 
   * Update to latest upstream.
