@@ -1,3 +1,10 @@
+lttoolbox (3.5.0-1+wmf1) jessie-wikimedia; urgency=low
+
+  * New upstream release.
+  * Cleanup debian/watch.
+
+ -- Kartik Mistry <kartik@debian.org>  Thu, 11 Oct 2018 10:39:56 +0530
+
 lttoolbox (3.4.2-2+wmf2) jessie-wikimedia; urgency=low
 
   * New upstream release.
