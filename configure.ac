@@ -5,7 +5,7 @@ AC_PREREQ(2.52)
 
 m4_define([required_libxml_version], [2.6.17])
 
-AC_INIT([lttoolbox/lttoolbox.h], [3.4.2], [sortiz@users.sourceforge.net])
+AC_INIT([lttoolbox/lttoolbox.h], [3.5.0], [sortiz@users.sourceforge.net])
 AC_CONFIG_HEADER([lttoolbox/lttoolbox_config.h])
 
 AC_CANONICAL_SYSTEM
@@ -14,8 +14,8 @@ GENERIC_LIBRARY_NAME=lttoolbox
 
 # Release versioning
 GENERIC_MAJOR_VERSION=3
-GENERIC_MINOR_VERSION=4
-GENERIC_MICRO_VERSION=2
+GENERIC_MINOR_VERSION=5
+GENERIC_MICRO_VERSION=0
 
 # API version (often = GENERIC_MAJOR_VERSION.GENERIC_MINOR_VERSION)
 GENERIC_API_VERSION=$GENERIC_MAJOR_VERSION.$GENERIC_MINOR_VERSION
@@ -114,7 +114,7 @@ AC_CHECK_FUNCS([setlocale strdup getopt_long])
 
 AM_CONDITIONAL([WINDOWS], [test x$version_type = xwindows])
 
-# Checks for highest supported C++ standard
+# Require highest supported C++ standard
 AC_LANG(C++)
 AX_CHECK_COMPILE_FLAG([-std=c++20], [CXXFLAGS="$CXXFLAGS -std=c++20"], [
  AX_CHECK_COMPILE_FLAG([-std=c++2a], [CXXFLAGS="$CXXFLAGS -std=c++2a"], [
@@ -122,7 +122,7 @@ AX_CHECK_COMPILE_FLAG([-std=c++20], [CXXFLAGS="$CXXFLAGS -std=c++20"], [
    AX_CHECK_COMPILE_FLAG([-std=c++1z], [CXXFLAGS="$CXXFLAGS -std=c++1z"], [
     AX_CHECK_COMPILE_FLAG([-std=c++14], [CXXFLAGS="$CXXFLAGS -std=c++14"], [
      AX_CHECK_COMPILE_FLAG([-std=c++1y], [CXXFLAGS="$CXXFLAGS -std=c++1y"], [
-      AX_CHECK_COMPILE_FLAG([-std=c++11], [CXXFLAGS="$CXXFLAGS -std=c++11"], [])
+      AC_MSG_ERROR([Could not enable at least C++1y (C++14) - upgrade your compiler])
      ])
     ])
    ])
