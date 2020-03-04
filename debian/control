@@ -4,23 +4,18 @@ Priority: optional
 Maintainer: Debian Science Team <debian-science-maintainers@lists.alioth.debian.org>
 Uploaders: Tino Didriksen <tino@didriksen.cc>,
            Kartik Mistry <kartik@debian.org>
-Build-Depends: automake,
-               autotools-dev,
-               debhelper (>= 9.0),
-               devscripts,
+Build-Depends: debhelper (>= 9.0),
                dh-autoreconf,
-               dh-exec (>= 0.3),
+               dh-exec,
                flex,
                gawk,
                libpcre3-dev,
-               libtool,
                libxml2-dev,
                libxml2-utils,
-               pkg-config (>= 0.20),
-               python-minimal,
-               python-testtools,
+               pkg-config,
+               swig,
                xsltproc,
-               zlib1g-dev (>= 1.2.3)
+               zlib1g-dev
 Standards-Version: 4.1.4
 Homepage: https://apertium.org/
 Vcs-Git: https://salsa.debian.org/science-team/lttoolbox.git

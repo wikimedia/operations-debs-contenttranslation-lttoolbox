@@ -1,3 +1,9 @@
+lttoolbox (3.5.1-1+wmf1) jessie-wikimedia; urgency=low
+
+  * New upstream release.
+
+ -- Kartik Mistry <kartik@debian.org>  Wed, 04 Mar 2020 17:49:33 +0530
+
 lttoolbox (3.5.0-1+wmf1) jessie-wikimedia; urgency=low
 
   * New upstream release.
